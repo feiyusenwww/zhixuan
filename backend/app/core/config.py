@@ -62,7 +62,11 @@ class Settings:
     database_url: str = os.getenv(
         "ZHIXUAN_DATABASE_URL", f"sqlite:///{DEFAULT_DB_PATH.as_posix()}"
     )
-    auto_create_tables: bool = _bool_env("ZHIXUAN_AUTO_CREATE_TABLES", True)
+    # 建表唯一入口是 alembic（`cd backend && .venv/Scripts/alembic upgrade head`）。
+    # 此项默认关闭：开启后启动时会用 create_all() 抢先建表，导致随后的 alembic
+    # 迁移因 "table already exists" 失败，且不会写入 alembic_version。
+    # 仅在需要"零迁移快速起一个临时库"时才显式设为 true。
+    auto_create_tables: bool = _bool_env("ZHIXUAN_AUTO_CREATE_TABLES", False)
 
     # —— 认证（tasks.md 3.1、3.2）——
     secret_key: str = os.getenv("ZHIXUAN_SECRET_KEY", DEFAULT_SECRET_KEY)

@@ -22,8 +22,14 @@ logger = logging.getLogger("zhixuan")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """启动时补齐缺失的数据表，并提示未替换的默认密钥。"""
+    """启动时提示未替换的默认密钥；数据表由 alembic 迁移创建。"""
     if settings.auto_create_tables:
+        logger.warning(
+            "ZHIXUAN_AUTO_CREATE_TABLES 已开启：启动时会直接建表，"
+            "将与 alembic 迁移冲突（迁移会报 table already exists）。"
+            "生产与常规开发请保持关闭，并在启动前执行："
+            "cd backend && .venv/Scripts/alembic upgrade head"
+        )
         from app.db.session import create_all
 
         create_all()
