@@ -1,24 +1,28 @@
+"""v1 路由汇总。
+
+模块划分与 docs/api-contract.md 一致，各模块接口定义在同名文件内：
+    health   健康检查
+    auth     认证（注册/登录）
+    profile  考生档案
+    pathways 升学途径与资格自检
+    qa       可溯源问答
+    plans    志愿方案
+    schools  院校检索
+"""
+
+from __future__ import annotations
+
 from fastapi import APIRouter
-from app.schemas.core import ProfileRequest, Credentials, PlanRequest
-from app.services.eligibility import build_eligibility, build_plan, response, DEMO
-router=APIRouter(prefix='/api',tags=['core'])
-@router.get('/health')
-def health(): return response({'status':'ok','service':'zhixuan'})
-@router.post('/auth/register')
-def register(payload:Credentials): return response({'user_id':'u_demo','username':payload.username,'access_token':'mock-token'})
-@router.post('/auth/login')
-def login(payload:Credentials): return response({'user_id':'u_demo','username':payload.username,'access_token':'mock-token'})
-@router.get('/user/profile')
-def profile(): return response({'province':'河南','score':620,'subject_type':'物理类'})
-@router.put('/user/profile')
-def update_profile(payload:ProfileRequest): return response(payload.model_dump())
-@router.get('/pathways')
-def pathways(): return response([{'id':'special-plan','name':'国家专项计划','status':'待核验',**DEMO},{'id':'normal-batch','name':'普通批','status':'可查询',**DEMO}])
-@router.post('/pathways/eligibility-check')
-def eligibility_check(payload:ProfileRequest): return response(build_eligibility(payload))
-@router.get('/qa')
-def qa(q:str): return response({'answer':'请先完善考生档案，我会基于你的省份、分数与选科给出可核验建议。','confidence':.62,'citations':[DEMO]})
-@router.post('/plans')
-def plans(payload:PlanRequest): return response(build_plan(payload.profile,payload.strategy))
-@router.get('/schools')
-def schools(keyword:str='',province:str='河南'): return response([{'school_id':'mock-001','name':'演示院校','province':province,'citations':[DEMO],**DEMO}] if keyword or province else [])
+
+from app.api.v1 import auth, health, pathways, plans, profile, qa, schools
+from app.core.config import settings
+
+router = APIRouter(prefix=settings.api_prefix)
+
+router.include_router(health.router)
+router.include_router(auth.router)
+router.include_router(profile.router)
+router.include_router(pathways.router)
+router.include_router(qa.router)
+router.include_router(plans.router)
+router.include_router(schools.router)
