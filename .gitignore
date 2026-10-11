@@ -18,6 +18,10 @@ venv/
 __pycache__/
 *.pyc
 
+# 本地运行产物（SQLite 数据库、上传缓存等）
+backend/.runtime/
+.runtime/
+
 # 环境与密钥（必须忽略）
 .env
 .env.*

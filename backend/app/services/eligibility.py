@@ -11,6 +11,9 @@ design.md D6：资格判定结论 SHALL 由确定性规则引擎产出，SHALL N
 - pending     输入缺失、或区域名单尚未核验，此时给出"待核验"而非确定结论
 
 对应前端 frontend/src/mocks/index.ts 的三种 mock（eligible / pending / ineligible）。
+
+输入的补充说明：考生档案中的专项标记（special_marks）只在结论里回显为 marked，
+不参与规则判定本身 —— 判定只看户籍、学籍、年限等事实输入。
 """
 
 from __future__ import annotations
@@ -72,6 +75,7 @@ class _Inputs:
         "enrollment_years",
         "parent_household_local",
         "registered",
+        "special_marks",
     )
 
     def __init__(self, payload: Any) -> None:
@@ -88,6 +92,7 @@ class _Inputs:
         self.enrollment_years = _norm_years(data.get("enrollment_years"))
         self.parent_household_local = data.get("parent_household_local")
         self.registered = data.get("registered", True)
+        self.special_marks = _norm_marks(data.get("special_marks"))
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -101,6 +106,7 @@ class _Inputs:
             "enrollment_years": self.enrollment_years or 0,
             "parent_household_local": self.parent_household_local,
             "registered": self.registered,
+            "special_marks": list(self.special_marks),
         }
 
 
@@ -113,6 +119,24 @@ def _norm_years(value: Any) -> int | None:
     except (TypeError, ValueError):
         return None
     return None if number <= 0 else number
+
+
+def _norm_marks(value: Any) -> tuple[str, ...]:
+    """专项标记：去空、去重并保持顺序。"""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        value = [value]
+    try:
+        items = list(value)
+    except TypeError:
+        return ()
+    result: list[str] = []
+    for raw in items:
+        key = str(raw).strip()
+        if key and key not in result:
+            result.append(key)
+    return tuple(result)
 
 
 class _RegionIndex:
@@ -292,6 +316,9 @@ def _evaluate_pathway(
         "pathway_name": pathway["name"],
         "status": status,
         "status_label": STATUS_LABELS[status],
+        # 考生档案中自行标记过该专项（tasks.md 3.5）。
+        # 注意：标记只作回显，不参与判定 —— 判定只看事实输入，避免"自述即通过"。
+        "marked": pathway["id"] in inputs.special_marks,
         "reasons": reasons,
         "blocking": [item for item in reasons if item["result"] != "passed"],
         "citations": _dedupe([item["citation"] for item in reasons]),

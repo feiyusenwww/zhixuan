@@ -9,12 +9,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
+from app.core.deps import get_optional_user
 from app.core.response import BizError, ok
+from app.db.session import get_db
+from app.models.user import User
 from app.schemas.core import EligibilityRequest
 from app.services import eligibility as eligibility_service
 from app.services import pathways as pathways_service
+from app.services import profile as profile_service
 
 router = APIRouter(prefix="/pathways", tags=["升学途径"])
 
@@ -40,9 +45,22 @@ def region_check(
 
 
 @router.post("/eligibility-check", summary="路径资格自检")
-def eligibility_check(payload: EligibilityRequest) -> dict[str, Any]:
-    """游客可用（tasks.md 4.5）。判定由确定性规则引擎完成，不含模型参与（design.md D6）。"""
-    return ok(eligibility_service.evaluate(payload))
+def eligibility_check(
+    payload: EligibilityRequest,
+    user: User | None = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """游客可用（tasks.md 4.5）。判定由确定性规则引擎完成，不含模型参与（design.md D6）。
+
+    已登录时，请求中未显式提供的户籍 / 学籍 / 专项标记会回落到档案中保存的值，
+    因此档案里标记过专项的用户无需重复填写（tasks.md 3.5）。
+    """
+    if user is None:
+        return ok(eligibility_service.evaluate(payload))
+
+    saved = profile_service.get_saved(db, user.id)
+    merged = profile_service.merge_saved(payload, saved, profile_service.ELIGIBILITY_FIELDS)
+    return ok(eligibility_service.evaluate(EligibilityRequest(**merged)))
 
 
 @router.get("/{pathway_id}", summary="升学途径详情")

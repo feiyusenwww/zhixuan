@@ -32,7 +32,9 @@ class BizCode:
     UNAUTHORIZED = 1002
     FORBIDDEN = 1003
     USERNAME_EXISTS = 1006
-    # 注意：契约暂未定义系统级错误码，此处为占位，待与队长确认后补入契约
+    # 以下三项契约暂未定义，为本 PR 提出的补充，待队长确认后补入契约（见 PR 描述）：
+    # 1008 登录失败次数超过阈值（tasks.md 3.2），1500 未捕获的服务端异常
+    TOO_MANY_ATTEMPTS = 1008
     INTERNAL_ERROR = 1500
 
 
