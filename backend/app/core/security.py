@@ -14,6 +14,9 @@
   ``username``、``iat``、``exp``、``jti``。
 - 失效：``/api/auth/logout`` 把当前令牌的 ``jti`` 写入吊销名单，直至其自然过期；
   账号注销后用户查不到，令牌同样立即失效（见 app/services/auth.py）。
+- **管理端令牌**（tasks.md 8.1）：与 C 端共用签名密钥，但额外带 ``typ=admin``，
+  ``sub`` 形如 ``admin:<id>``。``get_current_admin`` 校验 ``typ``，因此 C 端令牌
+  不能访问管理端接口（返回 1003），管理端令牌也不会被 ``get_current_user`` 认作 C 端用户。
 
 已知边界：吊销名单为进程内实现，多进程/多实例部署时应改为数据库或 Redis 存储。
 """
@@ -36,6 +39,10 @@ from app.core.response import BizCode, BizError
 HASH_NAME = "pbkdf2_sha256"
 SALT_BYTES = 16
 TOKEN_ALGORITHM = "HS256"
+
+# 管理端令牌标记（tasks.md 8.1）：载荷 typ=admin，sub 形如 admin:<id>
+ADMIN_TOKEN_TYPE = "admin"
+ADMIN_SUBJECT_PREFIX = "admin:"
 
 # 用户不存在时也执行一次哈希校验，避免通过响应耗时区分"用户是否存在"
 _DUMMY_HASH = (
@@ -135,6 +142,33 @@ def create_access_token(
     }
     token = jwt.encode(claims, settings.secret_key, algorithm=TOKEN_ALGORITHM)
     return token, claims
+
+
+def create_admin_token(
+    admin_id: int, username: str, role: str, ttl_minutes: int | None = None
+) -> tuple[str, dict[str, Any]]:
+    """签发管理端访问令牌（tasks.md 8.1）。载荷额外带 ``typ=admin`` 与 ``role``。"""
+    now = int(time.time())
+    ttl = ttl_minutes if ttl_minutes is not None else settings.access_token_ttl_minutes
+    claims: dict[str, Any] = {
+        "sub": f"{ADMIN_SUBJECT_PREFIX}{admin_id}",
+        "username": username,
+        "role": role,
+        "typ": ADMIN_TOKEN_TYPE,
+        "iat": now,
+        "exp": now + ttl * 60,
+        "jti": secrets.token_hex(16),
+    }
+    token = jwt.encode(claims, settings.secret_key, algorithm=TOKEN_ALGORITHM)
+    return token, claims
+
+
+def admin_id_from_subject(subject: str) -> int | None:
+    """从 ``admin:<id>`` 形式的 sub 取出管理员主键；格式不符返回 None。"""
+    if not subject.startswith(ADMIN_SUBJECT_PREFIX):
+        return None
+    raw = subject[len(ADMIN_SUBJECT_PREFIX) :]
+    return int(raw) if raw.isdigit() else None
 
 
 def decode_access_token(token: str) -> dict[str, Any]:

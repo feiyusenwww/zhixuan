@@ -36,6 +36,8 @@ class BizCode:
     # 1008 登录失败次数超过阈值（tasks.md 3.2），1500 未捕获的服务端异常
     TOO_MANY_ATTEMPTS = 1008
     INTERNAL_ERROR = 1500
+    # 产品书 6.0.4 已定义：缺少来源信息，拒绝入库（管理端语料/规则维护，tasks.md 8.2、8.6）
+    MISSING_SOURCE = 4001
 
 
 class BizError(Exception):

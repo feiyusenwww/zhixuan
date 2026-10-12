@@ -10,10 +10,12 @@
 - 7.3 用户系统：users、profiles（0001 迁移） + user_favorite / user_plan
 - 7.4 院校画像：school_profile / school_life
 - 7.5 知识库与运营：knowledge_doc / knowledge_chunk / qa_log / review_task / admin_user
+- 8.1 管理端运营：admin_audit_log（第 7 章未定义，为「操作留痕」验收新增，见 app/models/audit.py）
 """
 
 from __future__ import annotations
 
+from app.models.audit import AdminAuditLog
 from app.models.base_data import (
     DisciplineEval,
     EnrollmentRule,
@@ -42,6 +44,7 @@ from app.models.user import User
 from app.models.user_data import UserFavorite, UserPlan
 
 __all__ = [
+    "AdminAuditLog",
     "AdminUser",
     "DisciplineEval",
     "EnrollmentRule",

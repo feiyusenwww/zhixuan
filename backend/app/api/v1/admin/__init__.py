@@ -1,0 +1,39 @@
+"""管理端接口包（前缀 ``/api/admin``，产品书 6.6；tasks.md 8.1、8.2、8.6、8.7）。
+
+挂载方式（见 app/api/v1/router.py）：
+- ``auth.router``（``/login``、``/me``）**不加**统一鉴权依赖——``/login`` 必须公开，
+  ``/me`` 自行声明 ``get_current_admin``；
+- 其余子路由统一挂在 ``protected`` 上，一次性要求 ``get_current_admin``，
+  因此漏写依赖也不会把接口暴露出去。缺令牌 1002、持 C 端令牌 1003。
+
+本包目前只覆盖不依赖 ④ 号 RAG 链路的部分：
+    8.1 鉴权与操作留痕（auth.py + audit.py）
+    8.2 语料管理（docs.py）
+    8.6 途径与资格规则维护（pathways.py）
+    8.7 数据统计（stats.py）
+
+留待 ④ 号 RAG 就绪后再做的部分：
+    8.3 索引管理（增量重建）、8.4 审核工作台（自动入队）、8.5 审核操作与回流。
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+
+from app.api.v1.admin import audit, auth, docs, pathways, stats
+from app.core.deps import get_current_admin
+
+router = APIRouter(prefix="/admin", tags=["管理端"])
+
+# 公开：登录（/me 在 auth.router 内自行鉴权）
+router.include_router(auth.router)
+
+# 受保护：统一要求管理员身份，避免逐个接口漏写依赖
+protected = APIRouter(dependencies=[Depends(get_current_admin)])
+protected.include_router(docs.router)
+protected.include_router(pathways.router)
+protected.include_router(stats.router)
+protected.include_router(audit.router)
+router.include_router(protected)
+
+__all__ = ["router"]

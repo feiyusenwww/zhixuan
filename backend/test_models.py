@@ -4,8 +4,8 @@
 本脚本用临时 SQLite 库实测两件事：
 
 1. 幂等性 —— ``upgrade head`` 连续执行两次不报错；
-2. 结构一致性 —— 20 张新表的列、关键索引、外键与 CHECK 约束齐全，
-   且 ``downgrade`` 能干净回滚到 0001。
+2. 结构一致性 —— 21 张新表（第 7 章的 20 张 + 8.1 操作留痕表）的列、关键索引、
+   外键与 CHECK 约束齐全，且 ``downgrade`` 能干净回滚到 0001。
 
 无需 pytest，直接运行：
     cd backend && .venv\\Scripts\\python.exe test_models.py
@@ -116,6 +116,12 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "corrected_answer", "created_at", "reviewed_at",
     },
     "admin_user": {"id", "username", "password_hash", "role", "created_at"},
+    # 8.1 管理端操作留痕（**第 7 章之外**，为 8.1 验收「操作记录含操作人/时间/动作」新增，
+    # 见 app/models/audit.py 与 PR 描述；若队长要求改由结构化日志承载，删表即可）
+    "admin_audit_log": {
+        "id", "admin_id", "admin_username", "action", "target_type", "target_id",
+        "detail", "client_ip", "created_at",
+    },
 }
 
 EXPECTED_TABLES = set(EXPECTED_COLUMNS) | BASE_TABLES
@@ -136,6 +142,7 @@ EXPECTED_FOREIGN_KEYS: dict[str, set[str]] = {
     "review_task": {"qa_log.id"},
     "user_plan": {"users.id"},
     "qa_log": {"users.id"},
+    "admin_audit_log": {"admin_user.id"},
 }
 
 
@@ -152,7 +159,7 @@ def test_idempotent_upgrade(cfg: Config) -> None:
 
 
 def test_all_tables_present() -> None:
-    """表结构与第 7 章一致：20 张新表齐备，且没有多余表。"""
+    """表结构与第 7 章一致：20 张新表齐备（外加 8.1 留痕表），且没有多余表。"""
     engine = create_engine(os.environ["ZHIXUAN_DATABASE_URL"])
     tables = set(inspect(engine).get_table_names())
     actual = tables - {"alembic_version"}

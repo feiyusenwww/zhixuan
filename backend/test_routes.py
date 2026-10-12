@@ -47,6 +47,21 @@ EXPECTED = {
     # NEW：新增接口，待补入契约（专业检索与详情，产品书 6.5.6/6.5.7、tasks.md 7.1）
     ("/api/majors", "get"),
     ("/api/majors/{major_id}", "get"),
+    # NEW：新增接口，待补入契约（管理端，产品书 6.6、tasks.md 8.1/8.2/8.6/8.7）
+    ("/api/admin/login", "post"),
+    ("/api/admin/me", "get"),
+    ("/api/admin/docs", "get"),
+    ("/api/admin/docs", "post"),
+    ("/api/admin/docs/{doc_id}", "delete"),
+    ("/api/admin/pathways", "get"),
+    ("/api/admin/pathways", "post"),
+    ("/api/admin/pathways/{pathway_id}", "put"),
+    ("/api/admin/pathway-rules", "get"),
+    ("/api/admin/pathway-rules", "post"),
+    ("/api/admin/pathway-rules/{rule_id}", "put"),
+    ("/api/admin/pathway-regions", "get"),
+    ("/api/admin/stats", "get"),
+    ("/api/admin/audit-logs", "get"),
 }
 
 

@@ -75,6 +75,12 @@ class Settings:
     login_max_failures: int = _int_env("ZHIXUAN_LOGIN_MAX_FAILURES", 5)
     login_lock_seconds: int = _int_env("ZHIXUAN_LOGIN_LOCK_SECONDS", 300)
 
+    # —— 管理端（tasks.md 8.1）——
+    # 首个管理员的引导值，仅在手工执行 `python -m app.services.admin_seed` 时使用；
+    # 口令为空则脚本拒绝创建（避免落一个空口令的管理员）。登录后可正常使用。
+    admin_username: str = os.getenv("ZHIXUAN_ADMIN_USERNAME", "admin").strip() or "admin"
+    admin_password: str = os.getenv("ZHIXUAN_ADMIN_PASSWORD", "")
+
     @property
     def secret_key_is_default(self) -> bool:
         return self.secret_key == DEFAULT_SECRET_KEY

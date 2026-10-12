@@ -10,13 +10,25 @@
     user_plans 志愿方案保存/命名/编辑/删除（产品书 6.1.7）
     schools    院校检索、详情与画像
     majors     专业检索与详情
+    admin      管理端（产品书 6.6；tasks.md 8.1/8.2/8.6/8.7），子包 app/api/v1/admin/
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
-from app.api.v1 import auth, health, majors, pathways, plans, profile, qa, schools, user_plans
+from app.api.v1 import (
+    admin,
+    auth,
+    health,
+    majors,
+    pathways,
+    plans,
+    profile,
+    qa,
+    schools,
+    user_plans,
+)
 from app.core.config import settings
 
 router = APIRouter(prefix=settings.api_prefix)
@@ -30,3 +42,4 @@ router.include_router(plans.router)
 router.include_router(user_plans.router)
 router.include_router(schools.router)
 router.include_router(majors.router)
+router.include_router(admin.router)
