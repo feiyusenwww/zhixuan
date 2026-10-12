@@ -19,3 +19,9 @@ PROVINCE_MAX_LENGTH = 20
 SUBJECT_TYPE_MAX_LENGTH = 20
 PATHWAY_ID_MAX_LENGTH = 32
 USER_ID_MAX_LENGTH = 64
+
+# 生活信息可靠性标注（产品书 7.4 school_life.reliability；tasks.md 7.3）
+# official 视为官方来源，unofficial 在前端默认折叠并显示「仅供参考」
+RELIABILITY_OFFICIAL = "official"
+RELIABILITY_UNOFFICIAL = "unofficial"
+RELIABILITY_VALUES = (RELIABILITY_OFFICIAL, RELIABILITY_UNOFFICIAL)

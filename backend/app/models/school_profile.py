@@ -22,13 +22,22 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, utcnow
-from app.models.constants import YEAR_MAX, YEAR_MIN
+from app.models.constants import (
+    RELIABILITY_OFFICIAL,
+    RELIABILITY_UNOFFICIAL,
+    YEAR_MAX,
+    YEAR_MIN,
+)
 
 SOURCE_NAME_MAX_LENGTH = 200
 SOURCE_URL_MAX_LENGTH = 500
 
-RELIABILITY_OFFICIAL = "official"
-RELIABILITY_UNOFFICIAL = "unofficial"
+__all__ = [
+    "RELIABILITY_OFFICIAL",
+    "RELIABILITY_UNOFFICIAL",
+    "SchoolLife",
+    "SchoolProfile",
+]
 
 
 class SchoolProfile(Base):
@@ -40,7 +49,9 @@ class SchoolProfile(Base):
     school_id: Mapped[int] = mapped_column(ForeignKey("school.id"), index=True, unique=True)
     tuition_range: Mapped[str] = mapped_column(String(50), default="", comment="学费区间")
     accommodation_fee: Mapped[str] = mapped_column(String(50), default="", comment="住宿费")
-    campus_list: Mapped[list[str]] = mapped_column(JSON, default=list, comment="校区列表")
+    campus_list: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, default=list, comment="校区列表：[{name, address, city}]（产品书 6.5.3）"
+    )
     established_year: Mapped[int | None] = mapped_column(Integer, default=None, comment="建校年份")
     master_phd_points: Mapped[str] = mapped_column(String(50), default="", comment="硕博点数")
     first_class_major_count: Mapped[int | None] = mapped_column(

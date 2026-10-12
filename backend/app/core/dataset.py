@@ -15,6 +15,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from app.models.constants import RELIABILITY_OFFICIAL, RELIABILITY_UNOFFICIAL
+
 DATA_ROOT = Path(__file__).resolve().parent.parent / "data"
 
 CITATION_FIELDS = ("source_name", "source_url", "year")
@@ -198,6 +200,89 @@ def load_candidates() -> tuple[dict[str, Any], ...]:
     return tuple(candidates)
 
 
+@lru_cache(maxsize=1)
+def load_schools_demo() -> dict[str, Any]:
+    """加载院校/专业演示数据集（tasks.md 7.1、7.2 的本地种子）。
+
+    真实数据由 ③ 号按 tasks.md 2.5 采集后入库；本数据集用于本地开发与测试，
+    结构上与第 7 章各表一一对应，因此 ③ 号数据到位后只需停用本文件，服务层不改。
+
+    校验要点：来源三要素、school/major/source 三类 key 的引用完整性、
+    生活信息的 reliability 取值。缺来源或引用悬空一律拒收（宁可接口不可用，
+    也不输出无来源结论，口径同 tasks.md 2.6）。
+    """
+    payload = _read_json("schools/schools_demo.json")
+
+    sources: dict[str, dict[str, Any]] = {}
+    for item in payload.get("sources") or []:
+        key = str(item.get("key") or "")
+        if not key:
+            raise DataSourceError("院校数据集：source 缺少 key")
+        if key in sources:
+            raise DataSourceError(f"院校数据集：source key 重复：{key}")
+        validate_citation(item, f"来源 {key}")
+        sources[key] = item
+    if not sources:
+        raise DataSourceError("院校数据集：sources 不能为空")
+
+    def _index_unique(items: list[Any], label: str) -> dict[str, dict[str, Any]]:
+        indexed: dict[str, dict[str, Any]] = {}
+        for item in items:
+            key = str(item.get("key") or "")
+            if not key:
+                raise DataSourceError(f"院校数据集：{label} 缺少 key")
+            if key in indexed:
+                raise DataSourceError(f"院校数据集：{label} key 重复：{key}")
+            if not str(item.get("name") or "").strip():
+                raise DataSourceError(f"院校数据集：{label} {key} 缺少 name")
+            indexed[key] = item
+        return indexed
+
+    schools = _index_unique(payload.get("schools") or [], "school")
+    majors = _index_unique(payload.get("majors") or [], "major")
+    if not schools or not majors:
+        raise DataSourceError("院校数据集：schools 与 majors 均不能为空")
+
+    def _require(key: Any, table: str, context: str) -> None:
+        if str(key or "") not in table:
+            raise DataSourceError(f"院校数据集：{context} 引用了不存在的 {key!r}")
+
+    for item in payload.get("scores") or []:
+        context = f"录取分 {item.get('school')}/{item.get('major')}/{item.get('year')}"
+        _require(item.get("school"), schools, context)
+        _require(item.get("major"), majors, context)
+        _require(item.get("source"), sources, context)
+        min_score = item.get("min_score")
+        if min_score is not None and not isinstance(min_score, int):
+            raise DataSourceError(f"{context} 的 min_score 必须是整数或 null")
+        validate_citation(sources[str(item["source"])], context)
+
+    for item in payload.get("profiles") or []:
+        context = f"画像 {item.get('school')}"
+        _require(item.get("school"), schools, context)
+        _require(item.get("source"), sources, context)
+        validate_citation(sources[str(item["source"])], context)
+        campuses = item.get("campus_list")
+        if campuses is not None and not isinstance(campuses, list):
+            raise DataSourceError(f"{context} 的 campus_list 必须是数组")
+        for campus in campuses or []:
+            if not isinstance(campus, dict) or not str(campus.get("name") or "").strip():
+                raise DataSourceError(f"{context} 的 campus_list 元素须为含 name 的对象")
+
+    for item in payload.get("life") or []:
+        context = f"生活信息 {item.get('school')}/{item.get('category')}"
+        _require(item.get("school"), schools, context)
+        validate_citation(item, context)
+        reliability = str(item.get("reliability") or "")
+        if reliability not in {RELIABILITY_OFFICIAL, RELIABILITY_UNOFFICIAL}:
+            raise DataSourceError(
+                f"{context} 的 reliability 非法：{reliability!r}，"
+                f"应为 {RELIABILITY_OFFICIAL} 或 {RELIABILITY_UNOFFICIAL}"
+            )
+
+    return payload
+
+
 def clear_cache() -> None:
     """清空数据缓存，供管理端重建索引或测试使用。"""
     load_catalog.cache_clear()
@@ -206,3 +291,4 @@ def clear_cache() -> None:
     load_strategy_config.cache_clear()
     load_risk_rules.cache_clear()
     load_candidates.cache_clear()
+    load_schools_demo.cache_clear()
