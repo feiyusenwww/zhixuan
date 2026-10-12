@@ -31,6 +31,7 @@ from app.models.audit import (
     ACTION_REVIEW_CORRECT,
     ACTION_REVIEW_REJECT,
 )
+from app.models.constants import YEAR_MAX, YEAR_MIN
 from app.models.knowledge import (
     QA_STATUS_APPROVED,
     QA_STATUS_PENDING_REVIEW,
@@ -245,7 +246,13 @@ def task_detail(db: Session, task_id: int) -> dict[str, Any]:
 # 8.5 审核操作与回流
 # --------------------------------------------------------------------------- #
 def _primary_citation(citations: Any) -> dict[str, Any] | None:
-    """取首条带有来源三要素的引用；无可用引用返回 ``None``。"""
+    """取首条来源三要素齐全**且年份合规**的引用；无可用引用返回 ``None``。
+
+    年份须落在 2000–2100（口径同 ``app/models/constants.py`` 与各事实表 CHECK）。
+    越界年份（如 1999）与缺来源同等处理——**不沉淀**：否则写 ``source`` /
+    ``knowledge_doc`` 会撞 CHECK 约束抛 IntegrityError，把管理端审核接口变成 500，
+    而不是给出可预期、可解释的结果。
+    """
     for citation in citations or []:
         if not isinstance(citation, dict):
             continue
@@ -255,8 +262,11 @@ def _primary_citation(citations: Any) -> dict[str, Any] | None:
             year = int(citation.get("year") or 0)
         except (TypeError, ValueError):
             year = 0
-        if not source_guard.missing_source_fields(name, url, year):
-            return {"source_name": name, "source_url": url, "year": year}
+        if source_guard.missing_source_fields(name, url, year):
+            continue
+        if not (YEAR_MIN <= year <= YEAR_MAX):
+            continue
+        return {"source_name": name, "source_url": url, "year": year}
     return None
 
 

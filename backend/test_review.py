@@ -521,6 +521,39 @@ def _() -> None:
     assert stats["review_pending_count"] == expected, (stats["review_pending_count"], expected)
 
 
+# --------------------------------------------------------------------------- #
+# 补充：越界年份同样不得写入（避免撞 CHECK 约束把接口变成 500）
+# --------------------------------------------------------------------------- #
+@case("21 修正但引用年份越界：不沉淀且不报 500，仍完成修正")
+def _() -> None:
+    token = admin_token()
+    qa_log_id = make_qa_log(
+        "年份越界的引用问答",
+        confidence="low",
+        citations=[dict(CITATION, year=1999)],
+    )
+    enqueue_via_service(qa_log_id)
+    task = task_of(qa_log_id)
+
+    with SessionLocal() as db:
+        docs_before = int(db.scalar(select(func.count()).select_from(KnowledgeDoc)) or 0)
+
+    assert data(
+        "post",
+        f"/api/admin/review/tasks/{task.id}",
+        token,
+        json={"action": "correct", "corrected_answer": "修正内容"},
+    ) is None
+    assert task_of(qa_log_id).status == "corrected"
+
+    with SessionLocal() as db:
+        docs_after = int(db.scalar(select(func.count()).select_from(KnowledgeDoc)) or 0)
+    assert docs_after == docs_before, "年份越界时不得沉淀（否则撞 source/knowledge_doc 的 CHECK 约束）"
+
+    logs = data("get", "/api/admin/audit-logs", token, params={"action": "review.correct"})["items"]
+    assert logs[0]["detail"]["sedimented"] is False
+
+
 def main() -> int:
     failures: list[tuple[str, str]] = []
     for title, fn in CASES:
