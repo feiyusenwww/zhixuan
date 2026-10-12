@@ -34,6 +34,12 @@ EXPECTED = {
     ("/api/auth/logout", "post"),
     ("/api/auth/me", "get"),
     ("/api/user", "delete"),
+    # NEW：新增接口，待补入契约（方案保存/命名/编辑，产品书 6.1.7、tasks.md 6.6）
+    ("/api/user/plans", "get"),
+    ("/api/user/plans", "post"),
+    ("/api/user/plans/{plan_id}", "get"),
+    ("/api/user/plans/{plan_id}", "put"),
+    ("/api/user/plans/{plan_id}", "delete"),
 }
 
 

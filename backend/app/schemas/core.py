@@ -11,14 +11,21 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # 户籍类型：'未知' 表示用户未填写，判定结果将落为"待核验"而非确定结论
 HouseholdType = Literal["农村", "城镇", "未知"]
 Strategy = Literal["冲", "稳", "保"]
 Priority = Literal["院校优先", "专业优先", "城市优先"]
+
+# 已保存方案的倾向值：生成接口的三种倾向，外加 balanced（第 7 章 user_plan.strategy 的历史口径）
+SavedStrategy = Literal["冲", "稳", "保", "balanced"]
+# 志愿条目的档位取值（与产品书 6.1.7 PlanItem.tier 一致）
+TIER_LABELS = ("冲", "稳", "保")
+# 单套方案的志愿条目上限，防止异常请求写入超大 JSON
+MAX_PLAN_ITEMS = 200
 
 
 class Preferences(BaseModel):
@@ -118,3 +125,40 @@ class PlanRequest(BaseModel):
     batch_line: int | None = Field(
         default=None, description="批次控制线，未提供时不判定贴近批次线风险"
     )
+
+
+class SavedPlanWrite(BaseModel):
+    """方案保存 / 命名 / 编辑请求（tasks.md 6.6，产品书 6.1.7 POST|PUT /api/user/plans）。
+
+    字段严格对齐产品书 6.1.7 的 ``{ name, strategy, items[] }``。
+    ``items`` 原样落库（JSON），因此这里只做形状与档位取值校验，
+    不对条目内部字段做二次建模——生成接口（POST /api/plans）输出的条目结构
+    可能随 6.3/6.4/6.5 演进，保存环节保持透传可避免两处结构各自漂移。
+    """
+
+    name: str = Field(min_length=1, max_length=100, description="方案名称，用户可自定义")
+    strategy: SavedStrategy = Field(default="稳", description="方案倾向：冲 / 稳 / 保")
+    items: list[dict[str, Any]] = Field(
+        default_factory=list, description="冲—稳—保志愿条目，原样保存"
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("方案名称不能为空")
+        return value
+
+    @field_validator("items")
+    @classmethod
+    def _check_items(cls, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if len(value) > MAX_PLAN_ITEMS:
+            raise ValueError(f"方案志愿条目不得超过 {MAX_PLAN_ITEMS} 条")
+        for index, item in enumerate(value):
+            if not isinstance(item, dict):
+                raise ValueError(f"第 {index + 1} 个志愿必须是对象")
+            tier = item.get("tier")
+            if tier is not None and tier not in TIER_LABELS:
+                raise ValueError(f"第 {index + 1} 个志愿的 tier 只能是 冲 / 稳 / 保")
+        return value
