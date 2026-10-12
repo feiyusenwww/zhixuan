@@ -38,6 +38,10 @@ ACTION_PATHWAY_CREATE = "pathway.create"
 ACTION_PATHWAY_UPDATE = "pathway.update"
 ACTION_RULE_CREATE = "rule.create"
 ACTION_RULE_UPDATE = "rule.update"
+# 人工审核闭环（tasks.md 8.5：三类操作“必须留痕”）
+ACTION_REVIEW_APPROVE = "review.approve"
+ACTION_REVIEW_CORRECT = "review.correct"
+ACTION_REVIEW_REJECT = "review.reject"
 
 
 class AdminAuditLog(Base):

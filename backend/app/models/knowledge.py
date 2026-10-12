@@ -43,8 +43,12 @@ EMBEDDING_DIM = 512
 
 QA_STATUS_PENDING_REVIEW = "pending_review"
 QA_STATUS_APPROVED = "approved"
+QA_STATUS_REJECTED = "rejected"
 
 REVIEW_STATUS_PENDING = "pending"
+REVIEW_STATUS_APPROVED = "approved"
+REVIEW_STATUS_CORRECTED = "corrected"
+REVIEW_STATUS_REJECTED = "rejected"
 
 
 class KnowledgeDoc(Base):

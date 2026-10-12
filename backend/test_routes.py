@@ -63,6 +63,11 @@ EXPECTED = {
     ("/api/admin/pathway-regions", "get"),
     ("/api/admin/stats", "get"),
     ("/api/admin/audit-logs", "get"),
+    # NEW：新增接口，待补入契约（审核工作台，产品书 6.6.9/6.6.10、tasks.md 8.4/8.5）
+    ("/api/admin/review/tasks", "get"),
+    ("/api/admin/review/tasks/{task_id}", "get"),
+    ("/api/admin/review/tasks/{task_id}", "post"),
+    ("/api/admin/review/enqueue", "post"),
 }
 
 

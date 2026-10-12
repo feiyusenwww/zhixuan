@@ -87,3 +87,21 @@ class PathwayRuleWriteRequest(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict, description="规则参数")
     year: int = Field(default=0, description="数据所属年份")
     source: SourceInput = Field(default_factory=SourceInput)
+
+
+# 审核动作（产品书 6.6.10）：通过 / 修正 / 驳回
+ReviewAction = Literal["approve", "correct", "reject"]
+
+
+class ReviewDecisionRequest(BaseModel):
+    """人工审核决策（产品书 6.6.10 POST /review/tasks/{id}；tasks.md 8.5）。
+
+    - ``approve``：认可原答案；
+    - ``correct``：提交修正答案，**必须**带 ``corrected_answer``（缺失由服务层返回 1001），
+      修正内容沉淀回知识库（缺来源时不沉淀，见 services/review.py）；
+    - ``reject``：驳回，原答案不作为结论，任务留痕可追踪。
+    """
+
+    action: ReviewAction
+    corrected_answer: str = Field(default="", description="修正后的答案，action=correct 时必填")
+    comment: str = Field(default="", max_length=500, description="审核备注，随留痕保存")
