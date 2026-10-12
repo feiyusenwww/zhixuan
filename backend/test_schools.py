@@ -1,4 +1,4 @@
-"""院校检索与画像测试（tasks.md 7.1、7.2；产品书 6.5.1–6.5.4、6.5.6、6.5.7）。
+"""院校检索、画像与并排对比测试（tasks.md 7.1、7.2；产品书 6.5.1–6.5.7）。
 
 覆盖 7.1 的验收条件「组合条件筛选结果正确」与 7.2 的「各类信息按来源展示」，并补齐边界：
 - 单条件 / 组合条件筛选结果数正确，无结果时返回空但 total 为 0；
@@ -9,6 +9,8 @@
   无画像数据时 available=False 而非报错；
 - 生活信息按 category 过滤、每条带可靠性标注与非官方/官方区分；
 - 专业检索与详情；6.5.7 暂无来源的字段如实为空并在 data_status 说明；
+- 院校并排对比（6.5.5）：按入参顺序、去重、指标与画像一致、无画像如实留空并记 missing、
+  非正 id / 空数组 / 超 5 校 / 不存在的院校一律 1001；
 - 演示数据入库幂等。
 
 纯脚本，无 pytest 依赖，直接运行：
@@ -45,6 +47,18 @@ logging.getLogger("zhixuan").setLevel(logging.CRITICAL)
 
 PAGINATION_KEYS = {"items", "total", "page", "page_size"}
 
+# 并排对比中「可能缺失」的画像指标（与 app/services/schools.py 的 PROFILE_METRICS 对应）
+PROFILE_METRIC_FIELDS = {
+    "tuition_range",
+    "accommodation_fee",
+    "campus_count",
+    "established_year",
+    "master_phd_points",
+    "first_class_major_count",
+    "faculty_count",
+    "student_faculty_ratio",
+}
+
 # 演示数据集的既定规模（与 app/data/schools/schools_demo.json 对应）
 TOTAL_SCHOOLS = 8
 HENAN_SCHOOLS = 6
@@ -79,6 +93,22 @@ def data(path: str, **params) -> dict:
 
 def error_code(path: str, **params) -> int:
     return get(path, **params)["code"]
+
+
+def post(path: str, payload: dict) -> dict:
+    resp = client.post(path, json=payload)
+    assert resp.status_code == 200, (path, resp.text)
+    return resp.json()
+
+
+def post_data(path: str, payload: dict) -> dict:
+    body = post(path, payload)
+    assert body["code"] == 0, (path, payload, body)
+    return body["data"]
+
+
+def post_error_code(path: str, payload: dict) -> int:
+    return post(path, payload)["code"]
 
 
 def school_id_by_name(name: str) -> int:
@@ -280,6 +310,7 @@ def _() -> None:
     assert isinstance(profile["first_class_major_count"], int)
     assert profile["established_year"] == 1956
     assert profile["student_faculty_ratio"]
+    assert profile["master_phd_points"] == {"master": 60, "phd": 31}, "产品书 6.5.3 定为对象"
     assert profile["citations"], "画像缺少来源"
 
 
@@ -413,6 +444,88 @@ def _() -> None:
 @case("35 专业不存在返回 1001")
 def _() -> None:
     assert error_code("/api/majors/999999") == 1001
+
+
+# --------------------------------------------------------------------------- #
+# 并排对比（产品书 6.5.5）
+# --------------------------------------------------------------------------- #
+@case("36 两校并排：行数、顺序与字段齐全")
+def _() -> None:
+    zzu = school_id_by_name("郑州大学")
+    henu = school_id_by_name("河南大学")
+    result = post_data("/api/schools/compare", {"school_ids": [henu, zzu]})
+    assert [item["school_id"] for item in result["items"]] == [henu, zzu], "顺序应与入参一致"
+    assert result["count"] == 2
+    assert result["max_compare"] == 5
+    for item in result["items"]:
+        for field in (
+            "school_id", "name", "code", "province", "city", "level", "type", "ownership",
+            "tuition_range", "accommodation_fee", "campus_count", "established_year",
+            "master_phd_points", "first_class_major_count", "faculty_count",
+            "student_faculty_ratio", "profile_available", "missing", "sources",
+        ):
+            assert field in item, (item["name"], field)
+
+
+@case("37 并排指标取值与画像一致，硕博点为 {master, phd} 对象")
+def _() -> None:
+    item = post_data("/api/schools/compare", {"school_ids": [school_id_by_name("郑州大学")]})["items"][0]
+    assert item["profile_available"] is True
+    assert item["tuition_range"] == "4400-5700 元/年"
+    assert item["campus_count"] == 2, "校区数应为 campus_list 的长度"
+    assert item["established_year"] == 1956
+    assert item["master_phd_points"] == {"master": 60, "phd": 31}, item["master_phd_points"]
+    assert item["first_class_major_count"] == 65
+    assert item["faculty_count"] == 5800
+    assert item["student_faculty_ratio"] == "17:1"
+    assert item["missing"] == [], item["missing"]
+    assert item["sources"], "并排行需带来源"
+
+
+@case("38 无画像院校如实留空并标记 missing，不报错")
+def _() -> None:
+    item = post_data("/api/schools/compare", {"school_ids": [school_id_by_name("河南工业大学")]})["items"][0]
+    assert item["profile_available"] is False
+    assert item["tuition_range"] is None
+    assert item["campus_count"] is None
+    assert item["master_phd_points"] is None
+    assert set(item["missing"]) == PROFILE_METRIC_FIELDS, item["missing"]
+    assert item["sources"] == []
+    assert item["name"] == "河南工业大学", "基础属性仍并排展示"
+    assert item["level"] == "本科"
+
+
+@case("39 重复 id 去重后保留首次出现顺序")
+def _() -> None:
+    zzu = school_id_by_name("郑州大学")
+    henu = school_id_by_name("河南大学")
+    result = post_data("/api/schools/compare", {"school_ids": [henu, zzu, henu]})
+    assert [item["school_id"] for item in result["items"]] == [henu, zzu]
+    assert result["count"] == 2
+
+
+@case("40 空数组 / 非正 id / 超 5 校 / 类型错误一律 1001")
+def _() -> None:
+    assert post_error_code("/api/schools/compare", {"school_ids": []}) == 1001
+    assert post_error_code("/api/schools/compare", {"school_ids": [0]}) == 1001
+    assert post_error_code("/api/schools/compare", {"school_ids": [1, 2, 3, 4, 5, 6]}) == 1001
+    assert post_error_code("/api/schools/compare", {"school_ids": ["abc"]}) == 1001
+    assert post_error_code("/api/schools/compare", {}) == 1001
+
+
+@case("41 含不存在的院校返回 1001（不静默丢校）")
+def _() -> None:
+    zzu = school_id_by_name("郑州大学")
+    assert post_error_code("/api/schools/compare", {"school_ids": [zzu, 999999]}) == 1001
+
+
+@case("42 恰好 5 校在上限内可对比")
+def _() -> None:
+    ids = [item["school_id"] for item in data("/api/schools", page_size=5)["items"]]
+    assert len(ids) == 5
+    result = post_data("/api/schools/compare", {"school_ids": ids})
+    assert result["count"] == 5
+    assert [item["school_id"] for item in result["items"]] == ids
 
 
 def main() -> int:

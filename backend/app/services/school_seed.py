@@ -148,7 +148,7 @@ def seed_demo(db: Session) -> dict[str, int]:
                 accommodation_fee=item.get("accommodation_fee") or "",
                 campus_list=list(item.get("campus_list") or []),
                 established_year=item.get("established_year"),
-                master_phd_points=item.get("master_phd_points") or "",
+                master_phd_points=item.get("master_phd_points") or None,
                 first_class_major_count=item.get("first_class_major_count"),
                 faculty_count=item.get("faculty_count"),
                 student_faculty_ratio=item.get("student_faculty_ratio") or "",

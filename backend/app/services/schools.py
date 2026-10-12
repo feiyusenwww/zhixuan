@@ -1,4 +1,4 @@
-"""院校检索、详情与画像业务逻辑（tasks.md 7.1、7.2；产品书 6.5.1–6.5.4）。
+"""院校检索、详情、画像与并排对比业务逻辑（tasks.md 7.1、7.2；产品书 6.5.1–6.5.5）。
 
 数据一律来自库表（school / school_major_score / school_profile / school_life / source），
 因此 ③ 号按 tasks.md 2.5 把真实数据入库后本模块自动生效；
@@ -21,12 +21,16 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core import pagination
+from app.core.response import BizError
 from app.models.base_data import School, SchoolMajorScore
+from app.models.constants import MAX_COMPARE_SCHOOLS
 from app.models.school_profile import SchoolLife, SchoolProfile
 from app.models.source import Source
 
 __all__ = [
     "citations_by_school",
+    "compare_item",
+    "compare_schools",
     "get_life",
     "get_profile",
     "get_school",
@@ -304,3 +308,107 @@ def get_life(db: Session, school_id: int, category: str = "") -> dict[str, Any] 
         "total": len(rows),
         "categories": categories,
     }
+
+
+# --------------------------------------------------------------------------- #
+# 并排对比（产品书 6.5.5）
+# --------------------------------------------------------------------------- #
+# 并排表中「可能缺失」的画像指标：缺失时置 null 并记入 missing，不做任何推断
+PROFILE_METRICS = (
+    "tuition_range",
+    "accommodation_fee",
+    "campus_count",
+    "established_year",
+    "master_phd_points",
+    "first_class_major_count",
+    "faculty_count",
+    "student_faculty_ratio",
+)
+
+
+def _text(value: str | None) -> str | None:
+    """空串按缺失处理（库中未填的字符串列存的是 ''）。"""
+    return value or None
+
+
+def compare_item(
+    school: School, profile: SchoolProfile | None, source: Source | None
+) -> dict[str, Any]:
+    """并排表中的一行（产品书 6.5.5：层次 / 学费 / 一流专业数 / 师生比 / 校区数等）。
+
+    无画像数据时画像指标一律 null 并列入 ``missing``，不猜测、不用同类院校均值填充
+    （口径同本模块开头第 2 条）。
+    """
+    campuses = list(profile.campus_list or []) if profile is not None else []
+    metrics: dict[str, Any] = {
+        "tuition_range": _text(profile.tuition_range) if profile else None,
+        "accommodation_fee": _text(profile.accommodation_fee) if profile else None,
+        "campus_count": len(campuses) or None,
+        "established_year": profile.established_year if profile else None,
+        "master_phd_points": profile.master_phd_points if profile else None,
+        "first_class_major_count": profile.first_class_major_count if profile else None,
+        "faculty_count": profile.faculty_count if profile else None,
+        "student_faculty_ratio": _text(profile.student_faculty_ratio) if profile else None,
+    }
+    citation = citation_of_source(source)
+    return {
+        "school_id": school.id,
+        "name": school.name,
+        "code": school.code or "",
+        "province": school.province,
+        "city": school.city,
+        "level": school.level,
+        "type": school.type,
+        "ownership": school.ownership,
+        **metrics,
+        "profile_available": profile is not None,
+        "missing": [field for field in PROFILE_METRICS if metrics[field] is None],
+        "sources": [citation] if citation else [],
+    }
+
+
+def compare_schools(db: Session, school_ids: list[int]) -> dict[str, Any]:
+    """多所院校关键指标并排（产品书 6.5.5）。
+
+    - 展示顺序 = 入参顺序（去重后保留首次出现），与用户在页面上勾选的顺序一致；
+    - 任一 id 不存在 → BizError(1001)：静默丢校会让并排表缺列，与用户所见不符；
+    - 单次上限 ``MAX_COMPARE_SCHOOLS``，请求模型已先行拦截，这里再兜一次。
+    """
+    ordered: list[int] = []
+    for school_id in school_ids:
+        if school_id not in ordered:
+            ordered.append(school_id)
+
+    if not ordered:
+        raise BizError("请至少选择一所院校进行对比")
+    if len(ordered) > MAX_COMPARE_SCHOOLS:
+        raise BizError(f"最多同时对比 {MAX_COMPARE_SCHOOLS} 所院校")
+
+    rows = db.scalars(select(School).where(School.id.in_(ordered))).all()
+    by_id = {row.id: row for row in rows}
+
+    absent = [school_id for school_id in ordered if school_id not in by_id]
+    if absent:
+        raise BizError("院校不存在：" + "、".join(str(i) for i in absent))
+
+    profiles = {
+        profile.school_id: profile
+        for profile in db.scalars(
+            select(SchoolProfile).where(SchoolProfile.school_id.in_(ordered))
+        ).all()
+    }
+    source_ids = [profile.source_id for profile in profiles.values()]
+    sources: dict[int, Source] = {}
+    if source_ids:
+        sources = {
+            source.id: source
+            for source in db.scalars(select(Source).where(Source.id.in_(source_ids))).all()
+        }
+
+    items: list[dict[str, Any]] = []
+    for school_id in ordered:
+        profile = profiles.get(school_id)
+        source = sources.get(profile.source_id) if profile is not None else None
+        items.append(compare_item(by_id[school_id], profile, source))
+
+    return {"items": items, "count": len(items), "max_compare": MAX_COMPARE_SCHOOLS}

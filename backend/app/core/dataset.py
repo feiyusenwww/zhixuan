@@ -268,6 +268,11 @@ def load_schools_demo() -> dict[str, Any]:
         for campus in campuses or []:
             if not isinstance(campus, dict) or not str(campus.get("name") or "").strip():
                 raise DataSourceError(f"{context} 的 campus_list 元素须为含 name 的对象")
+        points = item.get("master_phd_points")
+        if points is not None and not isinstance(points, dict):
+            raise DataSourceError(
+                f"{context} 的 master_phd_points 须为 {{master, phd}} 对象或 null（产品书 6.5.3）"
+            )
 
     for item in payload.get("life") or []:
         context = f"生活信息 {item.get('school')}/{item.get('category')}"

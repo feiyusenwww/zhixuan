@@ -363,7 +363,7 @@
         { "name": "南校区", "address": "郑州市大学北路 75 号", "city": "郑州" }
       ],
       "established_year": 1956,
-      "master_phd_points": "硕士 60 / 博士 31",
+      "master_phd_points": { "master": 60, "phd": 31 },
       "first_class_major_count": 65,
       "faculty_count": 5800,
       "student_faculty_ratio": "17:1",
@@ -379,7 +379,7 @@
         { "name": "郑州校区", "address": "郑州市郑东新区明理路 379 号", "city": "郑州" }
       ],
       "established_year": 1912,
-      "master_phd_points": "硕士 48 / 博士 21",
+      "master_phd_points": { "master": 48, "phd": 21 },
       "first_class_major_count": 50,
       "faculty_count": 4400,
       "student_faculty_ratio": "18:1",
@@ -394,7 +394,7 @@
         { "name": "花园校区", "address": "郑州市北环路 36 号", "city": "郑州" }
       ],
       "established_year": 1951,
-      "master_phd_points": "硕士 34 / 博士 4",
+      "master_phd_points": { "master": 34, "phd": 4 },
       "first_class_major_count": 24,
       "faculty_count": 2600,
       "student_faculty_ratio": "19:1",

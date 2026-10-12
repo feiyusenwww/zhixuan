@@ -40,10 +40,11 @@ EXPECTED = {
     ("/api/user/plans/{plan_id}", "get"),
     ("/api/user/plans/{plan_id}", "put"),
     ("/api/user/plans/{plan_id}", "delete"),
-    # NEW：新增接口，待补入契约（院校详情/画像/生活，产品书 6.5.2–6.5.4、tasks.md 7.1/7.2）
+    # NEW：新增接口，待补入契约（院校详情/画像/生活/并排对比，产品书 6.5.2–6.5.5、tasks.md 7.1/7.2）
     ("/api/schools/{school_id}", "get"),
     ("/api/schools/{school_id}/profile", "get"),
     ("/api/schools/{school_id}/life", "get"),
+    ("/api/schools/compare", "post"),
     # NEW：新增接口，待补入契约（专业检索与详情，产品书 6.5.6/6.5.7、tasks.md 7.1）
     ("/api/majors", "get"),
     ("/api/majors/{major_id}", "get"),

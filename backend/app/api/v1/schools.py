@@ -1,13 +1,13 @@
-"""院校检索、详情与画像接口（tasks.md 7.1、7.2；产品书 6.5.1–6.5.4）。
+"""院校检索、详情、画像与并排对比接口（tasks.md 7.1、7.2；产品书 6.5.1–6.5.5）。
 
-鉴权：产品书 6.5.1–6.5.4 均为「鉴权：否」，故本文件全部接口对游客开放。
+鉴权：产品书 6.5.1–6.5.5 均为「鉴权：否」，故本文件全部接口对游客开放。
 
 契约变更（需队长登记，见 PR 描述）：
 - ``GET /api/schools`` 由「返回院校数组」改为**分页包**
   ``{items, total, page, page_size}``（产品书 6.0.3 / 6.5.1，tasks.md 7.1 要求分页）。
   这是**破坏性变更**：`docs/api-contract.md` 第 6 节、`frontend/src/api/index.ts`
   与 `frontend/src/types/api.d.ts` 需同步，三者为队长维护的共享文件。
-- 新增 ``GET /api/schools/{school_id}``、``/profile``、``/life`` 三个接口。
+- 新增 ``GET /api/schools/{school_id}``、``/profile``、``/life``、``POST /compare`` 四个接口。
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.core import pagination
 from app.core.response import BizError, ok
 from app.db.session import get_db
+from app.schemas.core import SchoolCompareRequest
 from app.services import schools as schools_service
 
 router = APIRouter(prefix="/schools", tags=["院校检索"])
@@ -51,6 +52,19 @@ def search_schools(
             page_size=page_size,
         )
     )
+
+
+@router.post("/compare", summary="院校并排对比")
+def compare_schools(
+    payload: SchoolCompareRequest,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """多所院校关键指标并排（产品书 6.5.5）。
+
+    按传入顺序返回（去重后保留首次出现），单次上限 5 所；任一院校不存在 → 1001。
+    路径声明在 ``/{school_id}`` 之前，避免被动态段抢先匹配。
+    """
+    return ok(schools_service.compare_schools(db, payload.school_ids))
 
 
 @router.get("/{school_id}", summary="院校详情")

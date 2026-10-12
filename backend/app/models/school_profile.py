@@ -53,7 +53,9 @@ class SchoolProfile(Base):
         JSON, default=list, comment="校区列表：[{name, address, city}]（产品书 6.5.3）"
     )
     established_year: Mapped[int | None] = mapped_column(Integer, default=None, comment="建校年份")
-    master_phd_points: Mapped[str] = mapped_column(String(50), default="", comment="硕博点数")
+    master_phd_points: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, default=None, comment="硕博点数：{master, phd}（产品书 6.5.3 定为对象，无数据为 null）"
+    )
     first_class_major_count: Mapped[int | None] = mapped_column(
         Integer, default=None, comment="一流本科专业建设点数量"
     )

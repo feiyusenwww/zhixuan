@@ -15,6 +15,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.models.constants import MAX_COMPARE_SCHOOLS
+
 # 户籍类型：'未知' 表示用户未填写，判定结果将落为"待核验"而非确定结论
 HouseholdType = Literal["农村", "城镇", "未知"]
 Strategy = Literal["冲", "稳", "保"]
@@ -161,4 +163,26 @@ class SavedPlanWrite(BaseModel):
             tier = item.get("tier")
             if tier is not None and tier not in TIER_LABELS:
                 raise ValueError(f"第 {index + 1} 个志愿的 tier 只能是 冲 / 稳 / 保")
+        return value
+
+
+class SchoolCompareRequest(BaseModel):
+    """院校并排对比请求（产品书 6.5.5 POST /api/schools/compare）。
+
+    产品书把校数写作「建议 ≤5」，此处落为硬上限（``MAX_COMPARE_SCHOOLS``）：
+    并排表超过 5 列在页面上已不可读，硬约束可让前端在发起请求前就拦住误用。
+    """
+
+    school_ids: list[int] = Field(
+        min_length=1,
+        max_length=MAX_COMPARE_SCHOOLS,
+        description=f"待对比院校 id，1–{MAX_COMPARE_SCHOOLS} 所，按传入顺序并排",
+    )
+
+    @field_validator("school_ids")
+    @classmethod
+    def _check_ids(cls, value: list[int]) -> list[int]:
+        for school_id in value:
+            if school_id <= 0:
+                raise ValueError("院校 id 必须为正整数")
         return value
