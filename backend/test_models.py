@@ -4,7 +4,7 @@
 本脚本用临时 SQLite 库实测两件事：
 
 1. 幂等性 —— ``upgrade head`` 连续执行两次不报错；
-2. 结构一致性 —— 21 张新表（第 7 章的 20 张 + 8.1 操作留痕表）的列、关键索引、
+2. 结构一致性 —— 22 张新表（第 7 章的 20 张 + 8.1 操作留痕表 + 8.3 索引任务表）的列、关键索引、
    外键与 CHECK 约束齐全，且 ``downgrade`` 能干净回滚到 0001。
 
 无需 pytest，直接运行：
@@ -122,6 +122,13 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "id", "admin_id", "admin_username", "action", "target_type", "target_id",
         "detail", "client_ip", "created_at",
     },
+    # 8.3 索引重建任务（**第 7 章之外**，产品书 6.6.4–6.6.5 未定义任务载体，
+    # 见 app/models/knowledge.py 与 PR 描述）
+    "index_task": {
+        "id", "scope", "doc_ids", "incremental", "status", "total", "processed",
+        "embedded", "pending_embedding", "failed_chunks", "message", "operator",
+        "created_at", "started_at", "finished_at",
+    },
 }
 
 EXPECTED_TABLES = set(EXPECTED_COLUMNS) | BASE_TABLES
@@ -159,7 +166,7 @@ def test_idempotent_upgrade(cfg: Config) -> None:
 
 
 def test_all_tables_present() -> None:
-    """表结构与第 7 章一致：20 张新表齐备（外加 8.1 留痕表），且没有多余表。"""
+    """表结构与第 7 章一致：20 张新表齐备（外加 8.1 留痕表与 8.3 索引任务表），且没有多余表。"""
     engine = create_engine(os.environ["ZHIXUAN_DATABASE_URL"])
     tables = set(inspect(engine).get_table_names())
     actual = tables - {"alembic_version"}

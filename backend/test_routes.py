@@ -68,6 +68,9 @@ EXPECTED = {
     ("/api/admin/review/tasks/{task_id}", "get"),
     ("/api/admin/review/tasks/{task_id}", "post"),
     ("/api/admin/review/enqueue", "post"),
+    # NEW：新增接口，待补入契约（索引管理，产品书 6.6.4/6.6.5、tasks.md 8.3）
+    ("/api/admin/index/rebuild", "post"),
+    ("/api/admin/index/tasks/{task_id}", "get"),
 }
 
 

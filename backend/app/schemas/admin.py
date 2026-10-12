@@ -105,3 +105,20 @@ class ReviewDecisionRequest(BaseModel):
     action: ReviewAction
     corrected_answer: str = Field(default="", description="修正后的答案，action=correct 时必填")
     comment: str = Field(default="", max_length=500, description="审核备注，随留痕保存")
+
+
+# 索引重建范围（产品书 6.6.4）
+IndexScope = Literal["all", "doc_ids"]
+
+
+class IndexRebuildRequest(BaseModel):
+    """索引重建请求（产品书 6.6.4 POST /index/rebuild；tasks.md 8.3）。
+
+    - ``scope=all``：全部切片；``scope=doc_ids``：仅 ``doc_ids`` 指定文档的切片（此时必须给 doc_ids）；
+    - ``incremental=True``：只处理未向量化（``embedding`` 为空）的切片，即「增量重建」；
+    - 缺 ``doc_ids``、文档不存在、已有任务在执行 → 由服务层返回 1001。
+    """
+
+    scope: IndexScope = "all"
+    doc_ids: list[int] = Field(default_factory=list, description="scope=doc_ids 时的目标文档")
+    incremental: bool = Field(default=True, description="真=仅未向量化切片，假=全量重算")

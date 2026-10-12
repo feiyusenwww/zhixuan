@@ -50,6 +50,13 @@ REVIEW_STATUS_APPROVED = "approved"
 REVIEW_STATUS_CORRECTED = "corrected"
 REVIEW_STATUS_REJECTED = "rejected"
 
+# 索引重建任务状态（tasks.md 8.3）：partial = 处理结束但仍有切片未向量化（向量化待 ④ 5.2）
+INDEX_STATUS_PENDING = "pending"
+INDEX_STATUS_RUNNING = "running"
+INDEX_STATUS_PARTIAL = "partial"
+INDEX_STATUS_DONE = "done"
+INDEX_STATUS_FAILED = "failed"
+
 
 class KnowledgeDoc(Base):
     """知识文档（语料原文）。"""
@@ -143,6 +150,45 @@ class ReviewTask(Base):
     corrected_answer: Mapped[str] = mapped_column(Text, default="", comment="修正后的答案，沉淀回知识库")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+
+
+class IndexTask(Base):
+    """索引重建任务（tasks.md 8.3；产品书 6.6.4–6.6.5）。
+
+    该表不在产品书第 7 章表清单内（同 ``admin_audit_log``）：产品书只规定
+    ``POST /index/rebuild`` 返回 ``{task_id, status}``、``GET /index/tasks/{task_id}``
+    返回 ``{status, progress}``，**任务的持久化载体未定义**，故新增本表承载任务态与进度，
+    使「重建期间问答仍可响应」可被观测（请求线程只建单，实际重建在后台线程执行）。
+    """
+
+    __tablename__ = "index_task"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(16), comment="all / doc_ids")
+    doc_ids: Mapped[list[int]] = mapped_column(JSON, default=list, comment="scope=doc_ids 时的目标文档")
+    incremental: Mapped[bool] = mapped_column(
+        Boolean, default=True, comment="真=只处理未向量化切片，假=全量重算"
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        default=INDEX_STATUS_PENDING,
+        index=True,
+        comment="pending / running / partial / done / failed",
+    )
+    total: Mapped[int] = mapped_column(Integer, default=0, comment="目标切片数")
+    processed: Mapped[int] = mapped_column(Integer, default=0)
+    embedded: Mapped[int] = mapped_column(Integer, default=0, comment="本次成功向量化数")
+    pending_embedding: Mapped[int] = mapped_column(
+        Integer, default=0, comment="仍待向量化数（未接入 Embedding 时等于 total）"
+    )
+    failed_chunks: Mapped[int] = mapped_column(Integer, default=0, comment="处理失败的切片数")
+    message: Mapped[str] = mapped_column(
+        String(300), default="", comment="如实标注：未接入向量化 / 异常摘要"
+    )
+    operator: Mapped[str] = mapped_column(String(50), default="", comment="发起重建的管理员账号")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, default=None)
 
 
 class AdminUser(Base):

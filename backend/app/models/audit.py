@@ -42,6 +42,8 @@ ACTION_RULE_UPDATE = "rule.update"
 ACTION_REVIEW_APPROVE = "review.approve"
 ACTION_REVIEW_CORRECT = "review.correct"
 ACTION_REVIEW_REJECT = "review.reject"
+# 索引重建（tasks.md 8.3）
+ACTION_INDEX_REBUILD = "index.rebuild"
 
 
 class AdminAuditLog(Base):

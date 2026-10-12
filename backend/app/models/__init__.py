@@ -11,6 +11,7 @@
 - 7.4 院校画像：school_profile / school_life
 - 7.5 知识库与运营：knowledge_doc / knowledge_chunk / qa_log / review_task / admin_user
 - 8.1 管理端运营：admin_audit_log（第 7 章未定义，为「操作留痕」验收新增，见 app/models/audit.py）
+- 8.3 管理端运营：index_task（第 7 章未定义，为索引重建的任务态与进度新增，见 app/models/knowledge.py）
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from app.models.base_data import (
 )
 from app.models.knowledge import (
     AdminUser,
+    IndexTask,
     KnowledgeChunk,
     KnowledgeDoc,
     QaLog,
@@ -48,6 +50,7 @@ __all__ = [
     "AdminUser",
     "DisciplineEval",
     "EnrollmentRule",
+    "IndexTask",
     "KnowledgeChunk",
     "KnowledgeDoc",
     "Major",
