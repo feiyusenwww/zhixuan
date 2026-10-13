@@ -10,10 +10,18 @@
 - 口径歧义与数据侧缺口必须**显式跳过并上报**，不猜不拆：
   ``艺术类 / 体育类`` 一行两类、``general-batch`` 外键缺失、占位骨架；
 - ``province_exam_rule`` 的 ``data_status`` 同步进 ``rule_dataset_status``（闸门 1 的可用性来源）；
-- 新增列 ``score_segment.batch`` 真的落库（③ 口径：批次不可合并）。
+- 新增列 ``score_segment.batch`` 真的落库（③ 口径：批次不可合并）；
+- ``school_major_score``：可空列（``school_id`` / ``major_id``）、身份列
+  （``major_code`` / ``group_code`` / ``major_name`` / ``exam_system``）、
+  **位置 id 防护**（未知 ``school_id`` 跳过上报而不是降级成 NULL）、
+  同键多行的序数幂等。
 
-数据来源是 ③ 随仓库分发的小样本包（``data/samples/``，15/26/12/11/7/10/12 条），
+数据来源是 ③ 随仓库分发的小样本包（``data/samples/``，15/26/12/11/7/10/12/12 条），
 正是为「② 建表导入联调」准备的，因此本测试不需要下载数据本体。
+
+⚠️ 院校样本包只有 10 所，而录取分样本引用了院校库 id 243（安徽财经大学），
+两者不自洽——共享夹具里因此会有 8 行按设计跳过（正是位置 id 防护的实证）；
+需要一个「院校齐全」的专门夹具来验证 12 行零丢失。
 
 纯脚本，无 pytest 依赖：
     cd backend && .venv\\Scripts\\python.exe test_importers.py
@@ -34,10 +42,10 @@ os.environ["ZHIXUAN_DATABASE_URL"] = f"sqlite:///{(_WORK / 'import.db').as_posix
 os.environ["ZHIXUAN_SECRET_KEY"] = "test-secret-key-import-suite-at-least-32-bytes"
 os.environ["ZHIXUAN_ENV"] = "test"
 
-from sqlalchemy import func, select  # noqa: E402
+from sqlalchemy import delete, func, select  # noqa: E402
 
 from app.db.session import SessionLocal, create_all  # noqa: E402
-from app.models.base_data import School, ScoreSegment  # noqa: E402
+from app.models.base_data import School, SchoolMajorScore, ScoreSegment  # noqa: E402
 from app.models.constraints import ProvinceExamRule, RuleDatasetStatus  # noqa: E402
 from app.models.pathway import Pathway, PathwayEligibility, PathwayRegion  # noqa: E402
 from app.models.source import Source  # noqa: E402
@@ -58,6 +66,7 @@ ROOT = _WORK / "data_root"
 (ROOT / "dictionaries").mkdir(parents=True, exist_ok=True)
 (ROOT / "schools").mkdir(parents=True, exist_ok=True)
 (ROOT / "score_segment").mkdir(parents=True, exist_ok=True)
+(ROOT / "school_major_score").mkdir(parents=True, exist_ok=True)
 
 shutil.copy(DATA / "sources" / "source-table.json", ROOT / "sources" / "source-table.json")
 for name in (
@@ -69,6 +78,10 @@ for name in (
     shutil.copy(DATA / "dictionaries" / name, ROOT / "dictionaries" / name)
 shutil.copy(SAMPLES / "school.json", ROOT / "schools" / "schools_merged.json")
 shutil.copy(SAMPLES / "score_segment.json", ROOT / "score_segment" / "score_segment_sample.json")
+shutil.copy(
+    SAMPLES / "school_major_score.json",
+    ROOT / "school_major_score" / "school_major_score_sample.json",
+)
 
 # 样本包的既定规模
 SAMPLE_SCHOOLS = 10
@@ -78,6 +91,7 @@ SAMPLE_PATHWAYS = 26
 SAMPLE_REGIONS = 91
 SAMPLE_RULES = 11
 SAMPLE_EXAM_RULES = 7
+SAMPLE_MAJOR_SCORES = 12
 
 CASES: list[tuple[str, Callable[[], None]]] = []
 
@@ -123,6 +137,16 @@ def test_first_run_counts() -> None:
     assert FIRST_BY_NAME["pathway_region"].created == SAMPLE_REGIONS
     assert FIRST_BY_NAME["school"].created == SAMPLE_SCHOOLS
     assert FIRST_BY_NAME["score_segment"].created == SAMPLE_SEGMENTS
+
+
+@case("院校库显式采用 ③ 的 id：北京大学 51 / 清华大学 55（下游录取分按此 id 引用）")
+def test_school_ids_from_data() -> None:
+    with SessionLocal() as db:
+        assert db.get(School, 51) is not None and db.get(School, 51).name == "北京大学"
+        assert db.get(School, 55) is not None and db.get(School, 55).name == "清华大学"
+        # 注意：不能断言自增顺序——显式 id 的意义正是让顺序不再影响归属
+        ids = set(db.scalars(select(School.id)).all())
+    assert {51, 55} <= ids
 
 
 @case("幂等：第二次执行所有数据集新增与更新均为 0")
@@ -313,6 +337,158 @@ def test_meta_level_source_fallback() -> None:
         )
     assert report.created == 1, report.describe()
     assert row is not None and row.cumulative_rank == 7
+
+
+@case("录取分：行数完全解释（12 = 入库 + 跳过），没有静默丢弃")
+def test_major_score_accounting() -> None:
+    report = FIRST_BY_NAME["school_major_score"]
+    assert report.read == SAMPLE_MAJOR_SCORES, report.describe()
+    assert report.accounted == report.read, report.describe()
+
+
+@case("录取分：位置 id 防护——院校样本未覆盖的 school_id 跳过上报，绝不降级成 NULL")
+def test_major_score_positional_id_guard() -> None:
+    with SessionLocal() as db:
+        known = set(db.scalars(select(School.id)).all())
+    rows = json.loads((SAMPLES / "school_major_score.json").read_text(encoding="utf-8"))["scores"]
+    expected_unknown = sum(
+        1 for row in rows if row.get("school_id") is not None and row["school_id"] not in known
+    )
+    assert expected_unknown > 0, "夹具失效：院校样本恰好覆盖了全部 school_id，本用例失去意义"
+
+    report = FIRST_BY_NAME["school_major_score"]
+    assert report.skip_reasons == {"unknown_school_id": expected_unknown}, report.describe()
+    # 未挂上的行留在库里的是 NULL，而不是被改写成别的院校 id
+    with SessionLocal() as db:
+        stray = db.scalar(
+            select(func.count())
+            .select_from(SchoolMajorScore)
+            .where(SchoolMajorScore.school_id.notin_(known))
+        )
+    assert stray == 0
+
+
+@case("录取分：school_id 为空的行必须入库（③ §五-2：客观缺失，不得拒绝）")
+def test_major_score_null_school_kept() -> None:
+    with SessionLocal() as db:
+        nulls = db.scalar(
+            select(func.count())
+            .select_from(SchoolMajorScore)
+            .where(SchoolMajorScore.school_id.is_(None))
+        )
+    assert nulls == 2, f"样本有 2 行 school_id 空（院校改名），实际入库 {nulls} 行"
+
+
+@case("录取分：2024 两省 subject_type 整列缺失的行入库且科类留空")
+def test_major_score_empty_subject_type_kept() -> None:
+    with SessionLocal() as db:
+        blanks = db.scalar(
+            select(func.count())
+            .select_from(SchoolMajorScore)
+            .where(SchoolMajorScore.subject_type == "")
+        )
+    assert blanks == 2, f"样本有 2 行 subject_type 空（2024 整列缺失），实际 {blanks} 行"
+
+
+@case("录取分：身份列落库——major_code/group_code/major_name/exam_system 不被丢弃")
+def test_major_score_identity_columns() -> None:
+    with SessionLocal() as db:
+        rows = db.scalars(select(SchoolMajorScore)).all()
+    assert rows, "录取分未导入"
+    codes = {row.major_code for row in rows}
+    assert {"10", "11", "12", "14"} & codes, codes
+    assert any(row.major_name for row in rows), "major_name 全空，专业身份丢失"
+    assert any(row.group_code for row in rows), "group_code 全空，专业组身份丢失"
+    assert {row.exam_system for row in rows} <= {"文理科", "3+1+2"}
+    assert "3+1+2" in {row.exam_system for row in rows}
+
+
+@case("录取分：二次执行幂等——新增为 0，且已入库行数不变")
+def test_major_score_idempotent() -> None:
+    with SessionLocal() as db:
+        before = db.scalar(select(func.count()).select_from(SchoolMajorScore))
+    report = SECOND_BY_NAME["school_major_score"]
+    assert report.created == 0, report.describe()
+    assert report.updated == 0, report.describe()
+    with SessionLocal() as db:
+        after = db.scalar(select(func.count()).select_from(SchoolMajorScore))
+    assert after == before, (before, after)
+
+
+@case("录取分：plan_count 不被 ③ 的 admit_count 污染（§2.4 不混填）")
+def test_major_score_plan_count_not_polluted() -> None:
+    with SessionLocal() as db:
+        rows = db.scalars(select(SchoolMajorScore)).all()
+    # ③ 的产物只有 admit_count，没有 plan_count；本表不得私自搬运
+    assert all(row.plan_count is None for row in rows), [
+        (row.major_name, row.plan_count) for row in rows if row.plan_count is not None
+    ]
+
+
+@case("录取分：院校齐全时 12 行零丢失、零跳过，且二次执行全落幂等")
+def test_major_score_full_fixture() -> None:
+    from app.services.importers.school_major_score import import_school_major_scores
+
+    # 专门夹具：把录取分样本引用的三所院校补齐（id 取真实值）
+    with SessionLocal() as db:
+        db.execute(delete(SchoolMajorScore))
+        for sid, name, province in ((51, "北京大学", "北京"), (55, "清华大学", "北京"),
+                                    (243, "安徽财经大学", "安徽")):
+            if db.get(School, sid) is None:
+                db.add(School(id=sid, name=name, province=province, level="本科"))
+        db.commit()
+
+        registry = SourceRegistry(db)
+        registry.load_registry(ROOT / "sources" / "source-table.json")
+        first = import_school_major_scores(db, SAMPLES, registry)
+        db.commit()
+        total_first = db.scalar(select(func.count()).select_from(SchoolMajorScore))
+
+        second = import_school_major_scores(db, SAMPLES, registry)
+        db.commit()
+        total_second = db.scalar(select(func.count()).select_from(SchoolMajorScore))
+
+    assert first.created == SAMPLE_MAJOR_SCORES, first.describe()
+    assert first.skipped == 0, first.describe()
+    assert total_first == SAMPLE_MAJOR_SCORES
+    assert second.created == 0 and second.updated == 0, second.describe()
+    assert second.unchanged == SAMPLE_MAJOR_SCORES, second.describe()
+    assert total_second == total_first
+
+    # 同键多行（同校同年同批次同专业组、同分数）必须两行都在，按 major_code 区分
+    with SessionLocal() as db:
+        same_key = db.scalars(
+            select(SchoolMajorScore).where(
+                SchoolMajorScore.school_id == 243,
+                SchoolMajorScore.year == 2025,
+                SchoolMajorScore.batch == "本科批",
+                SchoolMajorScore.subject_type == "物理类",
+                SchoolMajorScore.min_score == 560,
+            )
+        ).all()
+        null_rows = db.scalar(
+            select(func.count())
+            .select_from(SchoolMajorScore)
+            .where(SchoolMajorScore.school_id.is_(None))
+        )
+        blank_rows = db.scalar(
+            select(func.count())
+            .select_from(SchoolMajorScore)
+            .where(SchoolMajorScore.subject_type == "")
+        )
+    assert len(same_key) == 2, f"应保留 2 行（公共管理类 / 国际商务），实际 {len(same_key)}"
+    assert {row.major_code for row in same_key} == {"14", "12"}
+    assert null_rows == 2, "院校改名未挂上的 2 行必须保留为 NULL"
+    assert blank_rows == 2, "2024 科类缺失的 2 行必须保留为空科类"
+
+
+@case("录取分：来源解析——每行 source_id 都指回 source 表")
+def test_major_score_sources_present() -> None:
+    with SessionLocal() as db:
+        source_ids = set(db.scalars(select(Source.id)).all())
+        used = set(db.scalars(select(SchoolMajorScore.source_id)).all())
+    assert used, "录取分未导入"
+    assert used <= source_ids, used - source_ids
 
 
 def main() -> int:

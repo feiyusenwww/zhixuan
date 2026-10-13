@@ -25,6 +25,7 @@ from app.services.importers.pathways import import_pathways
 from app.services.importers.province_exam_rule import import_province_exam_rules
 from app.services.importers.schools import import_schools
 from app.services.importers.score_segment import import_score_segments
+from app.services.importers.school_major_score import import_school_major_scores
 from app.services.importers.sources import import_sources
 
 # 随仓库分发的字典类数据集（缺失视为环境错误）
@@ -49,6 +50,7 @@ def run_all(session: Session, root: Path) -> list[ImportReport]:
         ),
         import_schools(session, root / "schools" / "schools_merged.json", registry),
         import_score_segments(session, root / "score_segment", registry),
+        import_school_major_scores(session, root / "school_major_score", registry),
     ]
 
     if registry.unresolved:
