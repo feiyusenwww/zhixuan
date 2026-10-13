@@ -74,28 +74,72 @@ Auth: yes
 {"code":0,"message":"success","data":{"province":"河南","score":620,"subject_type":"物理类"},"trace_id":"trace"}
 ```
 
-`data` 字段（共 12 个）：
+`data` 为**完整 Profile 对象**，GET 与 PUT 的响应形状一致，均附 `completeness`
+（`{ percent, missing: string[] }`）。下表是全量清单；除标注必填者外均可缺省，
+缺省时相关判定按「未提供」处理，**不得默认成立**。
 
-| 字段 | 类型 | 必填 | 说明 |
-|---|---|---|---|
-| `province` | string | 是 | 报考省份 |
-| `score` | number | 是 | 高考总分 |
-| `subject_type` | string | 是 | 科类，如 `物理类` |
-| `household_type` | `农村`/`城镇`/null | 否 | 户籍类型；用于专项计划资格判定。`null` = 未填（**不再使用** `未知`） |
-| `home_county` | string/null | 否 | 户籍所在县（区） |
-| `enrollment_county` | string/null | 否 | 学籍所在县（区） |
-| `household_years` | number/null | 否 | 户籍年限 |
-| `enrollment_years` | number/null | 否 | 当地学籍年限 |
-| `parent_household_local` | boolean/null | 否 | 法定监护人户籍是否在当地 |
-| `special_marks` | string[] | 否 | 特殊身份标记（取值为途径 id） |
-| `preferences` | object | 否 | 偏好设置，见下 |
-| `updated_at` | string/null | 否 | 最后更新时间，ISO 8601 |
+**基本（7）**
 
-`preferences` 子字段：`priority`（`城市优先` / `专业优先`）、`preferred_majors`（string[]）、
-`preferred_cities`（string[]）、`accept_adjustment`（boolean）。
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `province` | string | 报考省份 |
+| `exam_type` | `普通`/`艺术`/`体育`/null | 招生类型；首期普通本科规则只接受 `普通` |
+| `first_subject` | `物理`/`历史`/null | 首选科目 |
+| `second_subjects` | string[] | 再选科目，使用项目统一科目字典 |
+| `subject_type` | string | 科类，如 `物理类` |
+| `score` | number | 高考总分（0~750，越界返回 `1001`） |
+| `rank` | number/null | 省内位次 |
 
-第 4~12 项为**追加字段**，可缺省；缺省时相关判定按「未提供」处理，不得默认成立。
-第 8.2 节的体检字段并入本对象，读回时同样遵循「`null` = 未填」。
+**户籍与学籍（8）**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `household_type` | `农村`/`城镇`/null | 户籍类型；用于专项计划资格判定。`null` = 未填（**不使用** `未知`） |
+| `home_county` | string/null | 户籍所在县（区）**名** |
+| `home_county_code` | string/null | 户籍县**行政区划代码**，精确匹配时优先于县名 |
+| `school_years` | number/null | 本地学籍年限 |
+| `enrollment_county` | string/null | 学籍所在县（区） |
+| `household_years` | number/null | 本人当地连续户籍年限 |
+| `enrollment_years` | number/null | 当地连续学籍年限 |
+| `parent_household_local` | boolean/null | 法定监护人户籍是否在当地 |
+
+**偏好（3）**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `preferred_cities` | string[] | 意向城市（有序） |
+| `preferred_majors` | string[] | 意向专业类 |
+| `tuition_budget` | number/null | 年学费预算（元/年），供第 8.5 节「学费闸门」使用 |
+
+`preferences` 为上述偏好的**方案级镜像**，子字段：`strategy`、`priority`
+（`城市优先` / `专业优先` / `院校优先`）、`preferred_majors`、`preferred_provinces`、
+`major_adjust`。生成方案时未显式传参的偏好沿用此处已保存值。
+
+**体检（9）**
+
+`color_vision`、`vision_left`、`vision_right`、`height`、`weight`、`hepatitis_b`、
+`hearing`、`smell`、`stutter`——取值与校验见第 8.2 节。可空项一律 `null` 表示未填。
+
+**志愿倾向（2）**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `batch_preference` | string[] | 意向批次；首期可填 `本科批`，供后续批次扩展 |
+| `accept_adjustment` | boolean/null | 档案级默认是否服从专业调剂；实际以方案内每条志愿自身取值为准 |
+
+**派生与元数据（4）**
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `special_marks` | string[] | 考生自行标记的专项资格，**取值为途径 id**（写入时校验必须是已知途径） |
+| `has_national_special` / `has_local_special` / `has_college_special` | boolean | **只读派生字段**，由专项标记与户籍/学籍条件推出，不作为请求入参 |
+| `updated_at` | string/null | 最后更新时间，ISO 8601 |
+| `completeness` | object | `{ percent, missing[] }`，未填项进 `missing`（产品书 6.1.5 / M2-13） |
+
+> **字段名裁定**：数据侧 `data/dictionaries/fields-definition.md` 曾把
+> 「户籍所在县以哪个为准？」列为待确认项。以本表为准：接口与库统一用
+> `home_county` / `home_county_code`（Alembic 0006 已把 `household_county`
+> 重命名），不再存在 `household_county`。
 
 ### PUT `/api/user/profile`
 Auth: yes；**增量更新**：未传字段保持原值，显式传 `null` 清空该项。
