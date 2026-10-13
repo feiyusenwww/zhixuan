@@ -155,6 +155,11 @@ class ScoreSegment(Base):
     province: Mapped[str] = mapped_column(String(PROVINCE_MAX_LENGTH))
     year: Mapped[int] = mapped_column(Integer)
     subject_type: Mapped[str] = mapped_column(String(SUBJECT_TYPE_MAX_LENGTH))
+    batch: Mapped[str] = mapped_column(
+        String(32),
+        default="",
+        comment="录取批次；老高考一分一段是「一条连续曲线被批次线切段」，合并会丢批次线信息",
+    )
     score: Mapped[int] = mapped_column(Integer, comment="分数")
     cumulative_rank: Mapped[int] = mapped_column(Integer, comment="累计人数（位次）")
     source_id: Mapped[int] = mapped_column(ForeignKey("source.id"))
