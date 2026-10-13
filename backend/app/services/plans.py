@@ -16,7 +16,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
+from typing import Any
 
 from app.core import dataset
 from app.core.dataset import citation_of
@@ -260,6 +261,9 @@ def _collect_risks(rule_data: tuple[dict[str, Any], ...], ctx: _PlanContext) -> 
         risks.append(
             {
                 "code": rule["code"],
+                # 契约 6.1 要求每条风险给出「级别 / 类型 / 目标 / 说明 / 规则来源」
+                "type": rule["code"],
+                "target": str((rule.get("params") or {}).get("tier") or "plan"),
                 "level": rule["level"],
                 "title": rule["title"],
                 "detail": rule["detail"],
@@ -299,6 +303,102 @@ def _dedupe(citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen.add(key)
         result.append(item)
     return result
+
+
+# --------------------------------------------------------------------------- #
+# 风险体检（契约 6.1 POST /api/plan/risk-check）
+# --------------------------------------------------------------------------- #
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_risk_item(
+    raw: Mapping[str, Any], ctx: _PlanContext, strategies: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """把外部传入的志愿条目收敛为风险检查所需的内部形状。
+
+    字段名兼容生成接口的条目（``name`` / ``min_score``）与前端 ``PlanItem``
+    （``school_name`` / ``min_score_ref`` / ``major_names``）。
+    ``tier`` 缺失或非法时，按与 ``build_plan`` 相同的「分差档位」口径推断，
+    避免把已经排好档的志愿误报为「某档为空」。
+    """
+    majors = raw.get("major_names")
+    major = ""
+    if isinstance(majors, (list, tuple)) and majors:
+        major = str(majors[0])
+    elif raw.get("major"):
+        major = str(raw["major"])
+
+    min_score = _int_or_none(raw.get("min_score", raw.get("min_score_ref"))) or 0
+    tier = str(raw.get("tier") or "").strip()
+    if tier not in TIER_ORDER and ctx.score:
+        inferred = _classify(ctx.score - min_score, strategies)
+        if inferred is not None:
+            tier = str(inferred["label"])
+
+    return {
+        "school_id": raw.get("school_id"),
+        "name": str(raw.get("school_name") or raw.get("name") or ""),
+        "province": str(raw.get("province") or ""),
+        "city": str(raw.get("city") or ""),
+        "major": major,
+        "subject_requirement": str(raw.get("subject_requirement") or ""),
+        "tier": tier if tier in TIER_ORDER else "",
+        "min_score": min_score,
+        "risk_level": TIER_RISK_LEVEL.get(tier, "medium"),
+        "reasons": [],
+        "citations": [],
+    }
+
+
+def check_risks(
+    profile: Any,
+    items: Sequence[Mapping[str, Any]],
+    *,
+    priority: str = "院校优先",
+    batch_line: Any = None,
+    risk_rules: Any = None,
+    strategies: Any = None,
+) -> list[dict[str, Any]]:
+    """对调用方给出的志愿条目做风险体检，**不重新生成方案**（契约 6.1）。
+
+    与 ``build_plan`` 复用同一套声明式规则（app/data/plans/risk_rules.json），
+    因此两处的风险口径必然一致；每条风险都携带规则来源。
+    """
+    profile_data = profile.model_dump() if hasattr(profile, "model_dump") else dict(profile or {})
+    ctx = _PlanContext(
+        {
+            "profile": profile_data,
+            "strategy": "稳",
+            "priority": priority,
+            "limit": max(1, len(items)),
+            "major_adjust": profile_data.get("accept_adjustment"),
+            "batch_line": batch_line,
+        }
+    )
+    strategy_list: list[dict[str, Any]] = list(
+        (dict(strategies) if strategies is not None else dataset.load_strategy_config()).get(
+            "strategies"
+        )
+        or []
+    )
+    ctx.items = [
+        _normalize_risk_item(raw, ctx, strategy_list)
+        for raw in items
+        if isinstance(raw, Mapping)
+    ]
+    ctx.total = len(ctx.items)
+    ctx.tier_counts = {
+        label: sum(1 for item in ctx.items if item["tier"] == label) for label in TIER_ORDER
+    }
+
+    rule_data = tuple(risk_rules if risk_rules is not None else dataset.load_risk_rules())
+    return _collect_risks(rule_data, ctx) if ctx.total else []
+
+
 
 
 # --------------------------------------------------------------------------- #
